@@ -95,7 +95,11 @@ export const startCall = asyncHandler(async (req, res) => {
 
 export const endCall = asyncHandler(async (req, res) => {
   const appointment = await Appointment.findById(req.body.appointmentId);
-  const callLog = await CallLog.findOne({ appointment: req.body.appointmentId });
+  // Get the most recent active callLog for this appointment
+  const callLog = await CallLog.findOne(
+    { appointment: req.body.appointmentId, status: { $ne: 'ended' } }
+  ).sort({ createdAt: -1 });
+
   if (!appointment || !callLog) {
     const error = new Error('Active call not found');
     error.statusCode = 404;
@@ -147,7 +151,10 @@ export const endCall = asyncHandler(async (req, res) => {
 
 // Query recording URL after stop — Agora uploads files to S3 async (takes 1-3 min after stop)
 export const fetchRecordingUrl = asyncHandler(async (req, res) => {
-  const callLog = await CallLog.findOne({ appointment: req.params.appointmentId });
+  // Get most recent callLog (may have multiple after restarts)
+  const callLog = await CallLog.findOne(
+    { appointment: req.params.appointmentId }
+  ).sort({ createdAt: -1 });
   if (!callLog) {
     const error = new Error('Call log not found');
     error.statusCode = 404;
