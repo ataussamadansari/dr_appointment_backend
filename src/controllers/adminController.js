@@ -4,7 +4,7 @@ import { Availability } from '../models/Availability.js';
 import { CallLog } from '../models/CallLog.js';
 import { DoctorSetting } from '../models/DoctorSetting.js';
 import { Payment } from '../models/Payment.js';
-import { endOfDay, nextDayDate, startOfDay, toISTDateString } from '../utils/dateHelper.js';
+import { endOfDay, isToday, nextDayDate, startOfDay, toISTDateString } from '../utils/dateHelper.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { sendSuccess } from '../utils/response.js';
 import { emit } from '../config/socket.js';
@@ -94,8 +94,6 @@ export const listAppointments = asyncHandler(async (req, res) => {
     if (req.query.dateTo)   filter.appointmentDate.$lte = endOfDay(req.query.dateTo);
   }
 
-  console.log('[listAppointments] query:', req.query, '| filter:', JSON.stringify(filter));
-
   const appointments = await Appointment.find(filter)
     .populate('patient', 'mobile name')
     .populate('payment')
@@ -119,12 +117,24 @@ export const appointmentDetail = asyncHandler(async (req, res) => {
 });
 
 export const updateAppointmentStatus = asyncHandler(async (req, res) => {
-  const appointment = await Appointment.findByIdAndUpdate(req.params.id, { status: req.body.status }, { new: true });
+  const appointment = await Appointment.findById(req.params.id);
   if (!appointment) {
     const error = new Error('Appointment not found');
     error.statusCode = 404;
     throw error;
   }
+
+  // Allow cancellation anytime, but other status changes only on appointment day
+  const allowedAnyTime = ['cancelled'];
+  if (!allowedAnyTime.includes(req.body.status) && !isToday(appointment.appointmentDate)) {
+    const error = new Error('Status can only be updated on the day of the appointment');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  appointment.status = req.body.status;
+  await appointment.save({ validateModifiedOnly: true });
+
   // Emit real-time to admin and patient
   emit('admin', 'appointment:updated', { _id: appointment._id, status: appointment.status, patientSnapshot: appointment.patientSnapshot, tokenNumber: appointment.tokenNumber });
   emit(appointment.patient.toString(), 'appointment:updated', { appointmentId: appointment._id, status: appointment.status });
@@ -132,9 +142,21 @@ export const updateAppointmentStatus = asyncHandler(async (req, res) => {
 });
 
 export const listRecordings = asyncHandler(async (req, res) => {
-  const recordings = await CallLog.find().populate({
-    path: 'appointment',
-    populate: { path: 'patient', select: 'mobile name' }
-  }).sort({ createdAt: -1 });
+  const filter = {};
+
+  // Date range filter on startedAt
+  if (req.query.dateFrom || req.query.dateTo) {
+    filter.startedAt = {};
+    if (req.query.dateFrom) filter.startedAt.$gte = startOfDay(req.query.dateFrom);
+    if (req.query.dateTo)   filter.startedAt.$lte = endOfDay(req.query.dateTo);
+  }
+
+  const recordings = await CallLog.find(filter)
+    .populate({
+      path: 'appointment',
+      select: 'patientSnapshot patient',
+      populate: { path: 'patient', select: 'mobile name' }
+    })
+    .sort({ createdAt: -1 });
   sendSuccess(res, recordings);
 });

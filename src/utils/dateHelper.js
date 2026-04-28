@@ -27,6 +27,11 @@ export const isNextDay = (date) => {
   return moment.tz(date, TZ).isSame(nextDayDate(), 'day');
 };
 
+// Check if a date is today (IST)
+export const isToday = (date) => {
+  return moment.tz(date, TZ).isSame(moment().tz(TZ), 'day');
+};
+
 // export const startOfDay = (date) => {
 //   const d = new Date(date);
 //   d.setHours(0, 0, 0, 0);
