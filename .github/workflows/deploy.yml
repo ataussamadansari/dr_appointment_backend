@@ -24,8 +24,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Check Render Deploy Hook secret
+        run: |
+          if [ -z "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" ]; then
+            echo "❌ ERROR: RENDER_DEPLOY_HOOK_URL secret is not set!"
+            echo "Go to: GitHub Repo → Settings → Secrets and variables → Actions → New repository secret"
+            exit 1
+          fi
+
       - name: Trigger Render Deploy Hook
         run: |
-          curl -s -o /dev/null -w "%{http_code}" \
-            --fail \
-            -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+          HTTP_STATUS=$(curl -s -o /tmp/render_response.txt -w "%{http_code}" \
+            -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}")
+          echo "Render response status: $HTTP_STATUS"
+          cat /tmp/render_response.txt
+          if [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
+            echo "❌ Render deploy hook failed with status $HTTP_STATUS"
+            exit 1
+          fi
+          echo "✅ Render deploy triggered successfully!"
