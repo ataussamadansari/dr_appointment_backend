@@ -25,7 +25,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'));
 app.use('/files', express.static(path.resolve(__dirname, '../storage')));
 
-app.get('/health', (req, res) => res.json({ success: true, message: 'OK' }));
+app.get('/health', (req, res) => res.json({ success: true, message: 'OK', version: '1.0.1' }));
 app.use('/api/auth', authRoutes);
 app.use('/api/patient', patientRoutes);
 app.use('/api/appointments', appointmentRoutes);
