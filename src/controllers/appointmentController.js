@@ -6,6 +6,7 @@ import { DoctorSetting } from '../models/DoctorSetting.js';
 import { isNextDay, nextDayDate, startOfDay, toISTDateString } from '../utils/dateHelper.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { sendSuccess } from '../utils/response.js';
+import { emit } from '../config/socket.js';
 
 const getSettings = async () => {
   const existing = await DoctorSetting.findOne().sort({ createdAt: 1 });
@@ -15,15 +16,18 @@ const getSettings = async () => {
 const ensureAvailability = async () => {
   const date = nextDayDate();
   const setting = await getSettings();
-  let availability = await Availability.findOne({ date });
-  if (!availability) {
-    availability = await Availability.create({
-      date,
-      isAvailable: setting.isAvailable,
-      maxSeats: setting.maxSeatsPerDay,
-      bookedSeats: 0
-    });
-  }
+  // Always sync maxSeats and isAvailable from latest DoctorSetting
+  const availability = await Availability.findOneAndUpdate(
+    { date },
+    {
+      $setOnInsert: { bookedSeats: 0 },
+      $set: {
+        isAvailable: setting.isAvailable,
+        maxSeats: setting.maxSeatsPerDay,
+      }
+    },
+    { new: true, upsert: true }
+  );
   return { setting, availability };
 };
 
@@ -131,5 +135,16 @@ export const createAppointment = asyncHandler(async (req, res) => {
   });
 
   await session.endSession();
+
+  // Emit real-time event to admin
+  emit('admin', 'appointment:new', {
+    _id: appointment._id,
+    status: appointment.status,
+    tokenNumber: appointment.tokenNumber,
+    feeAmount: appointment.feeAmount,
+    patientSnapshot: appointment.patientSnapshot,
+    appointmentDate: appointment.appointmentDate,
+  });
+
   sendSuccess(res, appointment, 'Appointment created. Complete payment to confirm.', 201);
 });

@@ -5,6 +5,7 @@ import { createRazorpayOrder, verifyRazorpaySignature } from '../services/razorp
 import { sendWhatsAppText } from '../services/whatsappService.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { sendSuccess } from '../utils/response.js';
+import { emit } from '../config/socket.js';
 
 export const createOrderValidation = [body('appointmentId').isMongoId()];
 export const verifyPaymentValidation = [
@@ -55,6 +56,16 @@ export const verifyPayment = asyncHandler(async (req, res) => {
   appointment.status = 'confirmed';
   appointment.payment = payment._id;
   await appointment.save();
+
+  // Emit real-time event to admin
+  emit('admin', 'appointment:updated', {
+    _id: appointment._id,
+    status: 'confirmed',
+    patientSnapshot: appointment.patientSnapshot,
+    tokenNumber: appointment.tokenNumber,
+    feeAmount: appointment.feeAmount,
+  });
+
   sendWhatsAppText({
     patient: appointment.patient,
     appointment,

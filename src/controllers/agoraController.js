@@ -6,6 +6,7 @@ import { sendCallNotification } from '../services/fcmService.js';
 import { queryCloudRecording, startCloudRecording, stopCloudRecording } from '../services/recordingService.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { sendSuccess } from '../utils/response.js';
+import { emit } from '../config/socket.js';
 
 export const tokenValidation = [param('appointmentId').isMongoId()];
 export const startCallValidation = [body('appointmentId').isMongoId()];
@@ -68,6 +69,11 @@ export const startCall = asyncHandler(async (req, res) => {
   appointment.callLog = callLog._id;
   await appointment.save();
 
+  // Emit real-time event to admin and patient
+  const patientId = appointment.patient.toString();
+  emit('admin', 'appointment:updated', { _id: appointment._id, status: 'calling', patientSnapshot: appointment.patientSnapshot, tokenNumber: appointment.tokenNumber });
+  emit(patientId, 'appointment:calling', { appointmentId: appointment._id });
+
   // Send FCM push notification to patient (works even if app is closed)
   try {
     const populated = await Appointment.findById(appointment._id).populate('patient', 'fcmToken');
@@ -122,6 +128,11 @@ export const endCall = asyncHandler(async (req, res) => {
 
   appointment.status = 'completed';
   await appointment.save();
+
+  // Emit real-time event to admin and patient
+  const patientId = appointment.patient.toString();
+  emit('admin', 'appointment:updated', { _id: appointment._id, status: 'completed', patientSnapshot: appointment.patientSnapshot, tokenNumber: appointment.tokenNumber });
+  emit(patientId, 'appointment:updated', { appointmentId: appointment._id, status: 'completed' });
 
   sendSuccess(res, {
     appointment,

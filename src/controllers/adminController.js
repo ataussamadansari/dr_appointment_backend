@@ -6,6 +6,7 @@ import { Payment } from '../models/Payment.js';
 import { endOfDay, nextDayDate, startOfDay } from '../utils/dateHelper.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { sendSuccess } from '../utils/response.js';
+import { emit } from '../config/socket.js';
 
 export const settingValidation = [
   body('consultationFee').isFloat({ min: 1 }),
@@ -79,6 +80,9 @@ export const updateAppointmentStatus = asyncHandler(async (req, res) => {
     error.statusCode = 404;
     throw error;
   }
+  // Emit real-time to admin and patient
+  emit('admin', 'appointment:updated', { _id: appointment._id, status: appointment.status, patientSnapshot: appointment.patientSnapshot, tokenNumber: appointment.tokenNumber });
+  emit(appointment.patient.toString(), 'appointment:updated', { appointmentId: appointment._id, status: appointment.status });
   sendSuccess(res, appointment, 'Appointment status updated');
 });
 
