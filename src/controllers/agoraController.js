@@ -43,7 +43,8 @@ export const startCall = asyncHandler(async (req, res) => {
   const channelName = makeChannelName(appointment._id);
   const rtc = generateRtcToken({ channelName, uid: 1 });
 
-  let callLog = await CallLog.findOne({ appointment: appointment._id });
+  // Only reuse an active (non-ended) callLog — if previous call ended, start fresh
+  let callLog = await CallLog.findOne({ appointment: appointment._id, status: { $ne: 'ended' } });
   if (!callLog) {
     let recordingData = {};
     try {
@@ -63,6 +64,8 @@ export const startCall = asyncHandler(async (req, res) => {
       startedAt: new Date(),
       ...recordingData
     });
+  } else {
+    console.log('[Call] Rejoining existing active callLog:', callLog._id);
   }
 
   appointment.status = 'calling';
@@ -101,29 +104,30 @@ export const endCall = asyncHandler(async (req, res) => {
 
   let stopResult = null;
   if (callLog.resourceId && callLog.sid && callLog.status !== 'ended') {
-    try {
-      stopResult = await stopCloudRecording({
-        channelName: callLog.channelName,
-        uid: 999999,
-        resourceId: callLog.resourceId,
-        sid: callLog.sid
-      });
-    } catch (recordingErr) {
-      console.error('[Call] Stop recording failed:', recordingErr?.response?.data || recordingErr?.message);
-    }
+    // Stop recording in background — don't block the API response
+    // Retry logic is inside stopCloudRecording (up to 4 attempts × 5s)
+    stopCloudRecording({
+      channelName: callLog.channelName,
+      uid: 999999,
+      resourceId: callLog.resourceId,
+      sid: callLog.sid
+    }).then(async (result) => {
+      callLog.recordingMetadata = { ...(callLog.recordingMetadata || {}), stopResult: result?.raw };
+      if (result?.recordingUrl) callLog.recordingUrl = result.recordingUrl;
+      if (result?.resourceId)   callLog.resourceId   = result.resourceId;
+      if (result?.sid)          callLog.sid           = result.sid;
+      await callLog.save();
+      console.log('[Recording] Background stop complete. URL:', result?.recordingUrl || 'pending S3 upload');
+    }).catch((err) => {
+      console.error('[Call] Background stop recording failed:', err?.response?.data || err?.message);
+    });
   } else {
     console.log('[Call] Skipping stop recording — resourceId:', callLog.resourceId, 'sid:', callLog.sid, 'status:', callLog.status);
   }
 
   callLog.status = 'ended';
   callLog.endedAt = new Date();
-  if (stopResult?.recordingUrl) {
-    callLog.recordingUrl = stopResult.recordingUrl;
-  }
-  // Always save resourceId+sid so we can query later if URL is null
-  if (stopResult?.resourceId) callLog.resourceId = stopResult.resourceId;
-  if (stopResult?.sid) callLog.sid = stopResult.sid;
-  callLog.recordingMetadata = { ...(callLog.recordingMetadata || {}), stopResult: stopResult?.raw };
+  // recordingUrl and metadata will be updated by background stop
   await callLog.save();
 
   appointment.status = 'completed';

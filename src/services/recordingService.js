@@ -103,36 +103,51 @@ export const stopCloudRecording = async ({ channelName, uid, resourceId, sid }) 
   const url = `${recordingBaseUrl}/${agoraConfig.appId}/cloud_recording/resourceid/${resourceId}/sid/${sid}/mode/mix/stop`;
   console.log('[Recording] Stopping cloud recording, channel:', channelName, 'sid:', sid);
 
-  const { data } = await axios.post(url, {
-    cname: channelName,
-    uid: String(uid),
-    clientRequest: {}
-  }, { headers: authHeader() });
+  // Agora requires at least 3-5s after start before stop is accepted.
+  // Retry up to 4 times with 5s delay on 404 "failed to find worker".
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let lastErr;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try {
+      const { data } = await axios.post(url, {
+        cname: channelName,
+        uid: String(uid),
+        clientRequest: {}
+      }, { headers: authHeader() });
 
-  console.log('[Recording] Stop response serverResponse:', JSON.stringify(data?.serverResponse));
+      console.log('[Recording] Stop response serverResponse:', JSON.stringify(data?.serverResponse));
 
-  // fileList can be an array of objects or a string depending on Agora plan/timing
-  const serverResponse = data?.serverResponse || {};
-  const fileList = serverResponse.fileList;
+      const serverResponse = data?.serverResponse || {};
+      const fileList = serverResponse.fileList;
+      let recordingUrl = null;
 
-  let recordingUrl = null;
+      if (Array.isArray(fileList) && fileList.length > 0) {
+        const mp4 = fileList.find((f) => f.fileName?.endsWith('.mp4'));
+        const firstFile = mp4 || fileList[0];
+        recordingUrl = `https://${agoraConfig.recordingBucket}.s3.amazonaws.com/${firstFile.fileName}`;
+        console.log('[Recording] URL from fileList array:', recordingUrl);
+      } else if (typeof fileList === 'string' && fileList.length > 0) {
+        recordingUrl = `https://${agoraConfig.recordingBucket}.s3.amazonaws.com/${fileList}`;
+        console.log('[Recording] URL from fileList string:', recordingUrl);
+      } else {
+        console.warn('[Recording] fileList empty at stop time — files uploading to S3 async.');
+      }
 
-  if (Array.isArray(fileList) && fileList.length > 0) {
-    // Prefer mp4 over hls
-    const mp4 = fileList.find((f) => f.fileName?.endsWith('.mp4'));
-    const firstFile = mp4 || fileList[0];
-    recordingUrl = `https://${agoraConfig.recordingBucket}.s3.amazonaws.com/${firstFile.fileName}`;
-    console.log('[Recording] URL from fileList array:', recordingUrl);
-  } else if (typeof fileList === 'string' && fileList.length > 0) {
-    recordingUrl = `https://${agoraConfig.recordingBucket}.s3.amazonaws.com/${fileList}`;
-    console.log('[Recording] URL from fileList string:', recordingUrl);
-  } else {
-    // fileList is empty at stop time — files upload to S3 async after stop
-    // Store resourceId+sid so we can query later
-    console.warn('[Recording] fileList empty at stop time — files may still be uploading to S3. Check S3 bucket manually or use queryRecording after a few minutes.');
+      return { raw: data, recordingUrl, resourceId, sid };
+    } catch (err) {
+      const code = err?.response?.data?.code;
+      const reason = err?.response?.data?.reason || err?.message;
+      lastErr = err;
+
+      if (code === 404 && attempt < 4) {
+        console.warn(`[Recording] Stop attempt ${attempt} failed (worker not ready): ${reason}. Retrying in 5s...`);
+        await sleep(5000);
+      } else {
+        throw err;
+      }
+    }
   }
-
-  return { raw: data, recordingUrl, resourceId, sid };
+  throw lastErr;
 };
 
 // Query recording status — call this a few minutes after stop to get the file URL
