@@ -48,6 +48,37 @@ export const getAdminPrescriptions = asyncHandler(async (req, res) => {
   sendSuccess(res, prescriptions);
 });
 
+// GET /prescriptions/medicine-suggestions?q=para
+// Returns unique medicine names + their most-used dosage/duration/instructions from past prescriptions
+export const getMedicineSuggestions = asyncHandler(async (req, res) => {
+  const q = (req.query.q || '').trim();
+
+  const matchStage = q
+    ? { $match: { 'medicines.name': { $regex: q, $options: 'i' } } }
+    : { $match: {} };
+
+  const results = await Prescription.aggregate([
+    matchStage,
+    { $unwind: '$medicines' },
+    ...(q ? [{ $match: { 'medicines.name': { $regex: q, $options: 'i' } } }] : []),
+    {
+      $group: {
+        _id: { $toLower: '$medicines.name' },
+        name:         { $last: '$medicines.name' },
+        dosage:       { $last: '$medicines.dosage' },
+        duration:     { $last: '$medicines.duration' },
+        instructions: { $last: '$medicines.instructions' },
+        count:        { $sum: 1 }
+      }
+    },
+    { $sort: { count: -1 } },
+    { $limit: 10 },
+    { $project: { _id: 0, name: 1, dosage: 1, duration: 1, instructions: 1, count: 1 } }
+  ]);
+
+  sendSuccess(res, results);
+});
+
 export const sendPrescriptionWhatsapp = asyncHandler(async (req, res) => {
   const prescription = await Prescription.findById(req.params.id).populate('patient appointment');
   if (!prescription || !prescription.pdfUrl) {
