@@ -2,6 +2,7 @@ import { body, param } from 'express-validator';
 import { Appointment } from '../models/Appointment.js';
 import { Availability } from '../models/Availability.js';
 import { CallLog } from '../models/CallLog.js';
+import { DoctorProfile } from '../models/DoctorProfile.js';
 import { DoctorSetting } from '../models/DoctorSetting.js';
 import { Payment } from '../models/Payment.js';
 import { endOfDay, isToday, nextDayDate, startOfDay, toISTDateString } from '../utils/dateHelper.js';
@@ -159,4 +160,38 @@ export const listRecordings = asyncHandler(async (req, res) => {
     })
     .sort({ createdAt: -1 });
   sendSuccess(res, recordings);
+});
+
+// ── Doctor Profile ────────────────────────────────────────────────────────────
+
+export const getDoctorProfile = asyncHandler(async (req, res) => {
+  let profile = await DoctorProfile.findOne();
+  if (!profile) {
+    // Seed default profile
+    profile = await DoctorProfile.create({
+      name: 'Dr. S. K. Poddar',
+      title: 'Dr.',
+      specialization: 'Consultant Neurologist',
+      experience: '20+ years',
+      clinicName: 'Neurology Centre',
+      clinicAddress: 'Gurudham Colony, Varanasi',
+      visitingHospitals: ['Galaxy Hospital', 'Varanasi Hospital'],
+      specialties: ['Stroke', 'Epilepsy', 'Neuromuscular Disorders'],
+      about: 'Dr. S K Poddar is an experienced Consultant Neurologist in Varanasi, practicing at the Neurology Center located at Gurudham Colony. He is also a visiting consultant at Galaxy Hospital and Varanasi Hospital. With over two decades of experience in the field of Neurology, Dr. Poddar specializes in the treatment of stroke, epilepsy and neuromuscular disorders. Apart from his clinical practice, Dr. SK Poddar is associated with several non-governmental organisations (NGOs), and has been running a rural epilepsy detection program for the last many years.',
+      education: [],
+      memberships: [],
+      achievements: [],
+      languages: ['Hindi', 'English'],
+    });
+  }
+  sendSuccess(res, profile);
+});
+
+export const updateDoctorProfile = asyncHandler(async (req, res) => {
+  const profile = await DoctorProfile.findOneAndUpdate(
+    {},
+    req.body,
+    { new: true, upsert: true, runValidators: false }
+  );
+  sendSuccess(res, profile, 'Doctor profile updated');
 });

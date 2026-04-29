@@ -9,6 +9,7 @@ import { adminRoutes } from './routes/adminRoutes.js';
 import { agoraRoutes } from './routes/agoraRoutes.js';
 import { appointmentRoutes } from './routes/appointmentRoutes.js';
 import { authRoutes } from './routes/authRoutes.js';
+import { doctorProfileRoutes } from './routes/doctorProfileRoutes.js';
 import { patientRoutes } from './routes/patientRoutes.js';
 import { paymentRoutes } from './routes/paymentRoutes.js';
 import { prescriptionRoutes } from './routes/prescriptionRoutes.js';
@@ -34,6 +35,7 @@ app.use('/api/agora', agoraRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/prescriptions', prescriptionRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
+app.use('/api/doctor', doctorProfileRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
