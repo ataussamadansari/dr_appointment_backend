@@ -70,7 +70,7 @@ export const verifyPayment = asyncHandler(async (req, res) => {
     patient: appointment.patient,
     appointment,
     type: 'payment_confirmation',
-    text: `Payment received. Your consultation is confirmed for ${appointment.appointmentDate.toDateString()} ${appointment.slotStart}.`
+    text: `Payment received. Your consultation is confirmed for ${appointment.appointmentDate.toDateString()}. Token number: ${appointment.tokenNumber}.`
   }).catch(() => {});
   sendSuccess(res, { appointment, payment }, 'Payment verified and appointment confirmed');
 });

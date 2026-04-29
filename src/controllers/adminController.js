@@ -188,9 +188,16 @@ export const getDoctorProfile = asyncHandler(async (req, res) => {
 });
 
 export const updateDoctorProfile = asyncHandler(async (req, res) => {
+  // Whitelist allowed fields — prevent arbitrary DB field injection
+  const allowed = ['name','title','specialization','experience','photo','about',
+    'clinicName','clinicAddress','visitingHospitals','specialties','education',
+    'memberships','achievements','languages','phone','email'];
+  const update = {};
+  allowed.forEach((key) => { if (req.body[key] !== undefined) update[key] = req.body[key]; });
+
   const profile = await DoctorProfile.findOneAndUpdate(
     {},
-    req.body,
+    update,
     { new: true, upsert: true, runValidators: false }
   );
   sendSuccess(res, profile, 'Doctor profile updated');
