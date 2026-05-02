@@ -17,9 +17,17 @@ export const nextDayDate = () => {
   return moment().tz(TZ).add(1, 'day').startOf('day').toDate();
 };
 
+export const addDays = (date, days) => {
+  return moment.tz(date, TZ).add(days, 'day').startOf('day').toDate();
+};
+
 // Format a date as IST date string (YYYY-MM-DD) for display
 export const toISTDateString = (date) => {
   return moment(date).tz(TZ).format('YYYY-MM-DD');
+};
+
+export const isHoliday = (date, holidayDates = []) => {
+  return holidayDates.includes(toISTDateString(date));
 };
 
 // Check next day (IST safe)

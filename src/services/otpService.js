@@ -1,5 +1,7 @@
 import bcrypt from 'bcryptjs';
+import { env } from '../config/env.js';
 import { Otp } from '../models/Otp.js';
+import { sendTemplateMessage, sendTextMessage } from './interaktService.js';
 
 export const sendOtp = async (mobile) => {
   const code = process.env.NODE_ENV === 'production'
@@ -13,7 +15,15 @@ export const sendOtp = async (mobile) => {
     expiresAt: new Date(Date.now() + 5 * 60 * 1000)
   });
 
-  // Replace this with an SMS provider such as Twilio, MSG91, or WhatsApp OTP template.
+  const response = await sendTemplateMessage(mobile, {
+    templateName: env.whatsapp.interaktOtpTemplateName,
+    bodyValues: [code]
+  });
+
+  if (!response.success) {
+    await sendTextMessage(mobile, `Your OTP is ${code}. It is valid for 5 minutes.`);
+  }
+
   if (process.env.NODE_ENV !== 'production') {
     console.log(`Development OTP for ${mobile}: ${code}`);
   }

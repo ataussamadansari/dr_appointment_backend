@@ -32,7 +32,21 @@ export const env = {
     token: process.env.WHATSAPP_ACCESS_TOKEN || '',
     phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || '',
     businessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '',
-    apiVersion: process.env.WHATSAPP_API_VERSION || 'v20.0'
+    apiVersion: process.env.WHATSAPP_API_VERSION || 'v20.0',
+    interaktApiKey: process.env.INTERAKT_API_KEY || '',
+    interaktApiBaseUrl: process.env.INTERAKT_API_BASE_URL || process.env.INTERAKT_BASE_URL || 'https://api.interakt.ai/v1/public',
+    interaktWebhookSecret: process.env.INTERAKT_WEBHOOK_SECRET || '',
+    interaktDefaultCountryCode: process.env.INTERAKT_DEFAULT_COUNTRY_CODE || process.env.INTERAKT_COUNTRY_CODE || '91',
+    interaktOtpTemplateName: process.env.INTERAKT_OTP_TEMPLATE_NAME || 'otp_authentication'
+  },
+  cashfree: {
+    env: process.env.CASHFREE_ENV || 'sandbox',
+    appId: process.env.CASHFREE_APP_ID || '',
+    secretKey: process.env.CASHFREE_SECRET_KEY || '',
+    apiVersion: process.env.CASHFREE_API_VERSION || '2025-01-01',
+    webhookSecret: process.env.CASHFREE_WEBHOOK_SECRET || '',
+    consultationFee: Number(process.env.CONSULTATION_FEE || 500),
+    maxDailyTokens: Number(process.env.MAX_DAILY_TOKENS || 20)
   },
   storage: {
     driver: process.env.STORAGE_DRIVER || 'local',

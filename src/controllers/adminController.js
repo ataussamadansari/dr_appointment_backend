@@ -5,14 +5,19 @@ import { CallLog } from '../models/CallLog.js';
 import { DoctorProfile } from '../models/DoctorProfile.js';
 import { DoctorSetting } from '../models/DoctorSetting.js';
 import { Payment } from '../models/Payment.js';
-import { endOfDay, isToday, nextDayDate, startOfDay, toISTDateString } from '../utils/dateHelper.js';
+import { WhatsappBookingSession } from '../models/WhatsappBookingSession.js';
+import { resolveStoredFileUrl } from '../services/storageService.js';
+import { endOfDay, isHoliday, isToday, nextDayDate, startOfDay, toISTDateString } from '../utils/dateHelper.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { sendSuccess } from '../utils/response.js';
 import { emit } from '../config/socket.js';
 
 export const settingValidation = [
   body('consultationFee').isFloat({ min: 1 }),
+  body('prescriptionAmount').optional().isFloat({ min: 1 }),
   body('maxSeatsPerDay').isInt({ min: 1 }),
+  body('holidayDates').optional().isArray(),
+  body('holidayDates.*').optional().matches(/^\d{4}-\d{2}-\d{2}$/),
   body('isAvailable').isBoolean()
 ];
 export const statusValidation = [param('id').isMongoId(), body('status').isIn(['payment_pending', 'confirmed', 'waiting', 'calling', 'completed', 'cancelled', 'missed'])];
@@ -20,18 +25,32 @@ export const statusValidation = [param('id').isMongoId(), body('status').isIn(['
 export const dashboardStats = asyncHandler(async (req, res) => {
   const today = startOfDay(new Date());
   const tomorrow = nextDayDate();
-  const [todayAppointments, tomorrowAppointments, completedAppointments, paid] = await Promise.all([
+  const [setting, todayAppointments, tomorrowAppointments, completedAppointments, paid, whatsappToday, whatsappTomorrow, tomorrowPaidTokens, whatsappPendingPayments] = await Promise.all([
+    DoctorSetting.findOne().sort({ createdAt: 1 }),
     Appointment.countDocuments({ appointmentDate: today }),
     Appointment.countDocuments({ appointmentDate: tomorrow }),
     Appointment.countDocuments({ status: 'completed' }),
-    Payment.aggregate([{ $match: { status: 'paid' } }, { $group: { _id: null, revenue: { $sum: '$amount' }, count: { $sum: 1 } } }])
+    Payment.aggregate([{ $match: { status: 'paid' } }, { $group: { _id: null, revenue: { $sum: '$amount' }, count: { $sum: 1 } } }]),
+    WhatsappBookingSession.countDocuments({ appointmentDate: today }),
+    WhatsappBookingSession.countDocuments({ appointmentDate: tomorrow }),
+    Appointment.countDocuments({ appointmentDate: tomorrow, status: { $nin: ['cancelled', 'missed', 'payment_pending'] } }),
+    WhatsappBookingSession.countDocuments({ appointmentDate: tomorrow, step: 'PAYMENT_PENDING', paymentStatus: 'pending' })
   ]);
+  const maxTokens = Math.min(setting?.maxSeatsPerDay || 20, Number(process.env.MAX_DAILY_TOKENS || 20));
   sendSuccess(res, {
     todayAppointments,
     tomorrowAppointments,
     completedAppointments,
     revenue: paid[0]?.revenue || 0,
-    paidCount: paid[0]?.count || 0
+    paidCount: paid[0]?.count || 0,
+    whatsapp: {
+      todayBookings: whatsappToday,
+      tomorrowBookings: whatsappTomorrow,
+      paidTokens: tomorrowPaidTokens,
+      pendingPayments: whatsappPendingPayments,
+      availableTokens: Math.max(maxTokens - tomorrowPaidTokens, 0),
+      maxTokens
+    }
   });
 });
 
@@ -45,10 +64,11 @@ export const getSettings = asyncHandler(async (req, res) => {
 export const getNextDaySlots = asyncHandler(async (req, res) => {
   const date = nextDayDate();
   const setting = await DoctorSetting.findOne().sort({ createdAt: 1 }) || await DoctorSetting.create({});
+  const closedForHoliday = isHoliday(date, setting.holidayDates || []);
 
   let availability = await Availability.findOneAndUpdate(
     { date },
-    { $setOnInsert: { bookedSeats: 0 }, $set: { isAvailable: setting.isAvailable, maxSeats: setting.maxSeatsPerDay } },
+    { $setOnInsert: { bookedSeats: 0 }, $set: { isAvailable: setting.isAvailable && !closedForHoliday, maxSeats: setting.maxSeatsPerDay } },
     { new: true, upsert: true }
   );
 
@@ -65,6 +85,7 @@ export const getNextDaySlots = asyncHandler(async (req, res) => {
 
   sendSuccess(res, {
     date: toISTDateString(availability.date),
+    isHoliday: closedForHoliday,
     isAvailable: availability.isAvailable,
     maxSeats: availability.maxSeats,
     bookedSeats: availability.bookedSeats,
@@ -81,6 +102,7 @@ export const updateSettings = asyncHandler(async (req, res) => {
 export const listAppointments = asyncHandler(async (req, res) => {
   const filter = {};
   if (req.query.status) filter.status = req.query.status;
+  if (req.query.source) filter.source = req.query.source;
 
   // Single date (legacy)
   if (req.query.date) {
@@ -99,8 +121,42 @@ export const listAppointments = asyncHandler(async (req, res) => {
     .populate('patient', 'mobile name')
     .populate('payment')
     .populate('prescription')
+    .populate('symptomIds', 'name description')
     .sort({ appointmentDate: -1, tokenNumber: 1 });
-  sendSuccess(res, appointments);
+  const rows = await Promise.all(appointments.map(async (appointment) => {
+    const row = appointment.toObject();
+    row.prescriptionPhotoUrl = await resolveStoredFileUrl({
+      key: appointment.prescriptionPhotoKey,
+      url: appointment.prescriptionPhotoUrl
+    });
+    return row;
+  }));
+  sendSuccess(res, rows);
+});
+
+export const listWhatsappBookings = asyncHandler(async (req, res) => {
+  const filter = {};
+  if (req.query.paymentStatus) filter.paymentStatus = req.query.paymentStatus;
+  if (req.query.bookingStatus) filter.step = req.query.bookingStatus;
+  if (req.query.date) {
+    const day = startOfDay(req.query.date);
+    filter.appointmentDate = { $gte: day, $lte: endOfDay(day) };
+  }
+
+  const rows = await WhatsappBookingSession.find(filter)
+    .populate('appointmentId')
+    .sort({ createdAt: -1 });
+  sendSuccess(res, rows);
+});
+
+export const whatsappBookingDetail = asyncHandler(async (req, res) => {
+  const row = await WhatsappBookingSession.findById(req.params.id).populate('appointmentId');
+  if (!row) {
+    const error = new Error('WhatsApp booking not found');
+    error.statusCode = 404;
+    throw error;
+  }
+  sendSuccess(res, row);
 });
 
 export const appointmentDetail = asyncHandler(async (req, res) => {
@@ -108,13 +164,19 @@ export const appointmentDetail = asyncHandler(async (req, res) => {
     .populate('patient')
     .populate('payment')
     .populate('prescription')
+    .populate('symptomIds', 'name description')
     .populate('callLog');
   if (!appointment) {
     const error = new Error('Appointment not found');
     error.statusCode = 404;
     throw error;
   }
-  sendSuccess(res, appointment);
+  const row = appointment.toObject();
+  row.prescriptionPhotoUrl = await resolveStoredFileUrl({
+    key: appointment.prescriptionPhotoKey,
+    url: appointment.prescriptionPhotoUrl
+  });
+  sendSuccess(res, row);
 });
 
 export const updateAppointmentStatus = asyncHandler(async (req, res) => {

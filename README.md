@@ -28,6 +28,27 @@ RAZORPAY_KEY_ID=rzp_...
 RAZORPAY_KEY_SECRET=...
 ```
 
+### Interakt WhatsApp
+```
+INTERAKT_API_KEY=
+INTERAKT_API_BASE_URL=https://api.interakt.ai/v1/public
+INTERAKT_WEBHOOK_SECRET=
+INTERAKT_DEFAULT_COUNTRY_CODE=91
+```
+
+### Cashfree Payment Links
+```
+PAYMENT_PROVIDER=cashfree
+CASHFREE_ENV=sandbox
+CASHFREE_APP_ID=
+CASHFREE_SECRET_KEY=
+CASHFREE_API_VERSION=2025-01-01
+CASHFREE_WEBHOOK_SECRET=
+CONSULTATION_FEE=500
+MAX_DAILY_TOKENS=20
+APP_BASE_URL=https://your-domain.com
+```
+
 ### Agora RTC
 ```
 AGORA_APP_ID=...
@@ -158,6 +179,29 @@ s3://your-bucket/recordings/<appointmentId>/<files>
 6. Wait 1-3 minutes for S3 upload
 7. Click "Fetch recording URL" in admin panel
 8. Check S3 bucket under `recordings/<appointmentId>/`
+
+## WhatsApp Offline Booking Setup
+
+### 1. Interakt setup
+- Go to Developer Settings.
+- Copy Secret Key into `INTERAKT_API_KEY`.
+- Configure webhook URL: `https://your-domain.com/api/interakt/webhook`.
+- Add webhook secret: same as `INTERAKT_WEBHOOK_SECRET`.
+- Select: Others -> Message received from customers. Template message statuses are optional.
+
+### 2. Cashfree setup
+- Add Client ID to `CASHFREE_APP_ID`.
+- Add Client Secret to `CASHFREE_SECRET_KEY`.
+- Configure webhook: `https://your-domain.com/api/cashfree/webhook`.
+- Enable payment link paid/payment success events.
+
+### 3. Test flow
+- Send `Hi` to the WhatsApp number.
+- Enter name, age, and city.
+- Receive the Cashfree payment link.
+- Pay the link.
+- Receive token confirmation on WhatsApp.
+- Check `/admin/whatsapp-bookings` in the admin panel.
 
 ---
 

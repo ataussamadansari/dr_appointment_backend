@@ -1,6 +1,7 @@
 import { body } from 'express-validator';
 import { Appointment } from '../models/Appointment.js';
 import { Prescription } from '../models/Prescription.js';
+import { resolveStoredFileUrl } from '../services/storageService.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
 import { sendSuccess } from '../utils/response.js';
 
@@ -27,8 +28,17 @@ export const updateProfile = asyncHandler(async (req, res) => {
 export const getMyAppointments = asyncHandler(async (req, res) => {
   const appointments = await Appointment.find({ patient: req.patient._id })
     .populate('prescription', 'pdfUrl diagnosis generatedAt')
+    .populate('symptomIds', 'name description')
     .sort({ appointmentDate: -1, createdAt: -1 });
-  sendSuccess(res, appointments);
+  const rows = await Promise.all(appointments.map(async (appointment) => {
+    const row = appointment.toObject();
+    row.prescriptionPhotoUrl = await resolveStoredFileUrl({
+      key: appointment.prescriptionPhotoKey,
+      url: appointment.prescriptionPhotoUrl
+    });
+    return row;
+  }));
+  sendSuccess(res, rows);
 });
 
 export const getMyPrescriptions = asyncHandler(async (req, res) => {

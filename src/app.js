@@ -9,10 +9,13 @@ import { adminRoutes } from './routes/adminRoutes.js';
 import { agoraRoutes } from './routes/agoraRoutes.js';
 import { appointmentRoutes } from './routes/appointmentRoutes.js';
 import { authRoutes } from './routes/authRoutes.js';
+import { cashfreeRoutes } from './routes/cashfreeRoutes.js';
 import { doctorProfileRoutes } from './routes/doctorProfileRoutes.js';
+import { interaktRoutes } from './routes/interaktRoutes.js';
 import { patientRoutes } from './routes/patientRoutes.js';
 import { paymentRoutes } from './routes/paymentRoutes.js';
 import { prescriptionRoutes } from './routes/prescriptionRoutes.js';
+import { symptomRoutes } from './routes/symptomRoutes.js';
 import { whatsappRoutes } from './routes/whatsappRoutes.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -21,7 +24,12 @@ const __dirname = path.dirname(__filename);
 export const app = express();
 
 app.use(cors());
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({
+  limit: '8mb',
+  verify: (req, res, buf) => {
+    req.rawBody = buf;
+  }
+}));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'));
 app.use('/files', express.static(path.resolve(__dirname, '../storage')));
@@ -31,9 +39,12 @@ app.use('/api/auth', authRoutes);
 app.use('/api/patient', patientRoutes);
 app.use('/api/appointments', appointmentRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/cashfree', cashfreeRoutes);
 app.use('/api/agora', agoraRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/interakt', interaktRoutes);
 app.use('/api/prescriptions', prescriptionRoutes);
+app.use('/api/symptoms', symptomRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/doctor', doctorProfileRoutes);
 
